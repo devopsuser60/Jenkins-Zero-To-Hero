@@ -2,6 +2,13 @@ pipeline {
 
     agent any
 
+    environment {
+        APP_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app'
+        MANIFEST_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests'
+        IMAGE_NAME = 'spring-boot-web'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
     stages {
 
         stage('Checkout') {
@@ -12,8 +19,9 @@ pipeline {
 
         stage('Build and Test') {
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                dir("${APP_DIR}") {
                     sh '''
+                        set -e
                         echo "=========================================="
                         echo " BUILD AND TEST"
                         echo "=========================================="
@@ -26,9 +34,10 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                dir("${APP_DIR}") {
                     withSonarQubeEnv('sonarqube') {
                         sh '''
+                            set -e
                             echo "=========================================="
                             echo " SONARQUBE ANALYSIS"
                             echo "=========================================="
@@ -42,59 +51,80 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                dir("${APP_DIR}") {
                     sh '''
+                        set -e
                         echo "=========================================="
                         echo " BUILD DOCKER IMAGE"
                         echo "=========================================="
 
-                        docker build -t spring-boot-web:${BUILD_NUMBER} .
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     '''
                 }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                sh '''
-                    echo "=========================================="
-                    echo " PUSH DOCKER IMAGE"
-                    echo "=========================================="
-
-                    docker push spring-boot-web:${BUILD_NUMBER}
-                '''
             }
         }
 
         stage('Update Kubernetes Manifest') {
             steps {
-                dir('java-maven-sonar-argocd-helm-k8s') {
+                dir("${MANIFEST_DIR}") {
                     sh '''
+                        set -e
                         echo "=========================================="
                         echo " UPDATE KUBERNETES MANIFEST"
                         echo "=========================================="
 
-                        chmod +x deploy.sh
-                        ./deploy.sh "$BUILD_NUMBER"
+                        ls -la
+
+                        if [ ! -f deployment.yaml ]; then
+                            echo "ERROR: deployment.yaml not found"
+                            exit 1
+                        fi
+
+                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deployment.yaml
+
+                        echo "Updated deployment.yaml:"
+                        cat deployment.yaml
                     '''
                 }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                    set -e
+                    echo "=========================================="
+                    echo " DEPLOY TO KUBERNETES"
+                    echo "=========================================="
+
+                    kubectl apply -f ${MANIFEST_DIR}/deployment.yaml
+                    kubectl apply -f ${MANIFEST_DIR}/service.yaml
+
+                    kubectl rollout status deployment/spring-boot-web --timeout=180s
+
+                    echo "=========================================="
+                    echo " DEPLOYMENT SUCCESSFUL"
+                    echo "=========================================="
+
+                    kubectl get pods
+                    kubectl get svc
+                    kubectl get deployment
+                '''
             }
         }
     }
 
     post {
-        always {
-            echo "=========================================="
-            echo " PIPELINE COMPLETED"
-            echo "=========================================="
-        }
-
         success {
-            echo "Pipeline SUCCESS"
+            echo 'PIPELINE COMPLETED SUCCESSFULLY'
         }
 
         failure {
-            echo "Pipeline FAILED"
+            echo 'PIPELINE FAILED'
+        }
+
+        always {
+            echo "Build Number: ${BUILD_NUMBER}"
         }
     }
 }
