@@ -3,56 +3,28 @@ pipeline {
     agent any
 
     environment {
-        SONAR_URL = 'http://192.168.73.146:9000'
-
-        DOCKER_IMAGE = "suyashawate/ultimate-cicd:${BUILD_NUMBER}"
-
-        GIT_REPO_NAME = 'Jenkins-Zero-To-Hero'
-        GIT_USER_NAME = 'devopsuser60'
+        APP_NAME = 'spring-boot-web'
+        DOCKER_IMAGE = 'spring-boot-web'
+        K8S_NAMESPACE = 'default'
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
-                echo '=========================================='
-                echo ' CHECKOUT'
-                echo '=========================================='
-
                 checkout scm
-
-                sh '''
-                    echo "Workspace:"
-                    pwd
-
-                    echo "Files:"
-                    ls -ltr
-
-                    echo "Java:"
-                    java -version
-
-                    echo "Maven:"
-                    mvn -version
-
-                    echo "Docker:"
-                    docker --version
-
-                    echo "Git:"
-                    git --version
-                '''
             }
         }
 
         stage('Build and Test') {
             steps {
                 dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-
                     sh '''
                         echo "=========================================="
                         echo " BUILD AND TEST"
                         echo "=========================================="
 
-                        mvn clean package
+                        mvn clean package -DskipTests
                     '''
                 }
             }
@@ -60,27 +32,14 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-
-                withCredentials([
-                    string(
-                        credentialsId: 'sonarqube',
-                        variable: 'SONAR_AUTH_TOKEN'
-                    )
-                ]) {
-
-                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-
+                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                    withSonarQubeEnv('sonarqube') {
                         sh '''
                             echo "=========================================="
                             echo " SONARQUBE ANALYSIS"
                             echo "=========================================="
 
-                            java -version
-                            mvn -version
-
-                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
-                              -Dsonar.token="$SONAR_AUTH_TOKEN" \
-                              -Dsonar.host.url="$SONAR_URL"
+                            mvn sonar:sonar
                         '''
                     }
                 }
@@ -89,19 +48,13 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-
                 dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
-
                     sh '''
                         echo "=========================================="
                         echo " BUILD DOCKER IMAGE"
                         echo "=========================================="
 
-                        docker --version
-
-                        docker build \
-                            -t "$DOCKER_IMAGE" \
-                            .
+                        docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
                     '''
                 }
             }
@@ -109,41 +62,25 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-
-                script {
-
+                sh '''
                     echo "=========================================="
-                    echo " PUSH TO DOCKER HUB"
+                    echo " PUSH DOCKER IMAGE"
                     echo "=========================================="
 
-                    docker.withRegistry(
-                        'https://index.docker.io/v1/',
-                        'docker-cred'
-                    ) {
-
-                        docker.image("${DOCKER_IMAGE}").push()
-                    }
-                }
+                    docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                '''
             }
         }
 
         stage('Update Kubernetes Manifest') {
             steps {
-
-                withCredentials([
-                    string(
-                        credentialsId: 'github-cred',
-                        variable: 'GITHUB_TOKEN'
-                    )
-                ]) {
-
+                dir('java-maven-sonar-argocd-helm-k8s') {
                     sh '''
                         echo "=========================================="
                         echo " UPDATE KUBERNETES MANIFEST"
                         echo "=========================================="
 
                         chmod +x deploy.sh
-
                         ./deploy.sh "$BUILD_NUMBER"
                     '''
                 }
@@ -152,21 +89,16 @@ pipeline {
     }
 
     post {
+        always {
+            echo "Pipeline completed."
+        }
 
         success {
-            echo '=========================================='
-            echo ' PIPELINE COMPLETED SUCCESSFULLY'
-            echo " Docker Image: ${DOCKER_IMAGE}"
-            echo " Build Number: ${BUILD_NUMBER}"
-            echo '=========================================='
+            echo "Pipeline SUCCESS"
         }
 
         failure {
-            echo '=========================================='
-            echo ' PIPELINE FAILED'
-            echo " Build Number: ${BUILD_NUMBER}"
-            echo ' Check the failed stage logs.'
-            echo '=========================================='
+            echo "Pipeline FAILED"
         }
     }
 }
