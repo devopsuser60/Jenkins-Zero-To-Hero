@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     environment {
@@ -22,10 +21,6 @@ pipeline {
                 dir("${APP_DIR}") {
                     sh '''
                         set -e
-                        echo "=========================================="
-                        echo " BUILD AND TEST"
-                        echo "=========================================="
-
                         mvn clean package -DskipTests
                     '''
                 }
@@ -38,10 +33,6 @@ pipeline {
                     withSonarQubeEnv('sonarqube') {
                         sh '''
                             set -e
-                            echo "=========================================="
-                            echo " SONARQUBE ANALYSIS"
-                            echo "=========================================="
-
                             mvn sonar:sonar
                         '''
                     }
@@ -54,10 +45,6 @@ pipeline {
                 dir("${APP_DIR}") {
                     sh '''
                         set -e
-                        echo "=========================================="
-                        echo " BUILD DOCKER IMAGE"
-                        echo "=========================================="
-
                         docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     '''
                 }
@@ -69,11 +56,6 @@ pipeline {
                 dir("${MANIFEST_DIR}") {
                     sh '''
                         set -e
-                        echo "=========================================="
-                        echo " UPDATE KUBERNETES MANIFEST"
-                        echo "=========================================="
-
-                        ls -la
 
                         if [ ! -f deployment.yaml ]; then
                             echo "ERROR: deployment.yaml not found"
@@ -82,7 +64,6 @@ pipeline {
 
                         sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deployment.yaml
 
-                        echo "Updated deployment.yaml:"
                         cat deployment.yaml
                     '''
                 }
@@ -93,18 +74,11 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    echo "=========================================="
-                    echo " DEPLOY TO KUBERNETES"
-                    echo "=========================================="
 
                     kubectl apply -f ${MANIFEST_DIR}/deployment.yaml
                     kubectl apply -f ${MANIFEST_DIR}/service.yaml
 
                     kubectl rollout status deployment/spring-boot-web --timeout=180s
-
-                    echo "=========================================="
-                    echo " DEPLOYMENT SUCCESSFUL"
-                    echo "=========================================="
 
                     kubectl get pods
                     kubectl get svc
@@ -121,10 +95,6 @@ pipeline {
 
         failure {
             echo 'PIPELINE FAILED'
-        }
-
-        always {
-            echo "Build Number: ${BUILD_NUMBER}"
         }
     }
 }
