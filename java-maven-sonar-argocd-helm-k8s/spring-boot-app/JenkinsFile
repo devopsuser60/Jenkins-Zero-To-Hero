@@ -10,15 +10,21 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                sh 'echo passed'
-                // git branch: 'main', url: 'https://github.com/iam-veeramalla/Jenkins-Zero-To-Hero.git'
+                git branch: 'main',
+                    url: 'https://github.com/iam-veeramalla/Jenkins-Zero-To-Hero.git'
+
+                sh '''
+                    echo "Java version:"
+                    java -version
+
+                    echo "Maven version:"
+                    mvn -version
+                '''
             }
         }
 
         stage('Build and Test') {
             steps {
-                sh 'ls -ltr'
-
                 sh '''
                     cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
                     mvn clean package
@@ -39,15 +45,10 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        echo "SonarQube URL: $SONAR_URL"
-
-                        echo "Testing SonarQube connectivity..."
-                        curl -f "$SONAR_URL/api/system/status"
-
                         cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
 
                         mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
-                          -Dsonar.login="$SONAR_AUTH_TOKEN" \
+                          -Dsonar.token="$SONAR_AUTH_TOKEN" \
                           -Dsonar.host.url="$SONAR_URL"
                     '''
                 }
@@ -98,14 +99,11 @@ pipeline {
                         sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
                         java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                        git add \
-                        java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}" || true
 
-                        git push \
-                        https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} \
-                        HEAD:main
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
                     '''
                 }
             }
