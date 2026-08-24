@@ -26,7 +26,11 @@ pipeline {
 
                 sh '''
                     set -e
+
+                    echo "Workspace:"
                     pwd
+
+                    echo "Files:"
                     ls -la
                 '''
             }
@@ -136,15 +140,30 @@ pipeline {
                         echo ' UPDATE KUBERNETES MANIFEST'
                         echo '=========================================='
 
+                        echo "Manifest:"
+                        echo "${MANIFEST}"
+
+                        echo
                         echo "Current image:"
                         grep 'image:' "${MANIFEST}"
 
-                        sed -i \
-                          "s|replaceImageTag|${BUILD_NUMBER}|g" \
+                        echo
+                        echo "Updating image tag to BUILD_NUMBER=${BUILD_NUMBER}"
+
+                        sed -i -E \
+                          "s|(image:[[:space:]]*${DOCKER_IMAGE}:).*|\\1${BUILD_NUMBER}|" \
                           "${MANIFEST}"
 
+                        echo
                         echo "New image:"
                         grep 'image:' "${MANIFEST}"
+
+                        echo
+                        echo "Verifying image tag..."
+
+                        grep -q "${DOCKER_IMAGE}:${BUILD_NUMBER}" "${MANIFEST}"
+
+                        echo "Image tag verification successful."
 
                         git config user.email "devopsuser60@gmail.com"
                         git config user.name "devopsuser60"
@@ -154,6 +173,9 @@ pipeline {
                         git commit \
                           -m "Update deployment image to version ${BUILD_NUMBER}" \
                           || echo "No manifest changes to commit"
+
+                        echo
+                        echo "Pushing manifest to GitHub..."
 
                         git push \
                           "https://${GIT_USER_NAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git" \
@@ -176,16 +198,22 @@ pipeline {
     }
 
     post {
+
         success {
             echo '=========================================='
             echo ' PIPELINE COMPLETED SUCCESSFULLY'
             echo '=========================================='
+
+            echo "Docker Image: ${DOCKER_IMAGE}:${BUILD_NUMBER}"
+            echo "Latest Image: ${DOCKER_IMAGE}:latest"
         }
 
         failure {
             echo '=========================================='
             echo ' PIPELINE FAILED'
             echo '=========================================='
+
+            echo "Check the failed stage above."
         }
     }
 }
