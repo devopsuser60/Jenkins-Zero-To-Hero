@@ -1,11 +1,6 @@
 pipeline {
 
-    agent {
-        docker {
-            image 'abhishekf5/maven-abhishek-docker-agent:v1'
-            args '--user root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
         SONAR_URL = 'http://192.168.73.146:9000'
@@ -20,33 +15,30 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo 'Checking source code...'
-                sh 'pwd'
-                sh 'ls -ltr'
-            }
-        }
+                echo '=========================================='
+                echo ' CHECKOUT'
+                echo '=========================================='
 
-        stage('Configure Java 17') {
-            steps {
+                checkout scm
+
                 sh '''
-                    echo "Java before configuration:"
-                    java -version || true
+                    echo "Workspace:"
+                    pwd
 
-                    echo "JAVA_HOME=$JAVA_HOME"
+                    echo "Files:"
+                    ls -ltr
 
-                    if [ -d "/usr/lib/jvm/java-17-openjdk" ]; then
-                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
-                    elif [ -d "/usr/lib/jvm/java-17-openjdk-17" ]; then
-                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-17
-                    elif [ -d "/usr/lib/jvm/java-17" ]; then
-                        export JAVA_HOME=/usr/lib/jvm/java-17
-                    fi
-
-                    export PATH="$JAVA_HOME/bin:$PATH"
-
-                    echo "JAVA_HOME=$JAVA_HOME"
+                    echo "Java:"
                     java -version
+
+                    echo "Maven:"
                     mvn -version
+
+                    echo "Docker:"
+                    docker --version
+
+                    echo "Git:"
+                    git --version
                 '''
             }
         }
@@ -54,10 +46,11 @@ pipeline {
         stage('Build and Test') {
             steps {
                 dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+
                     sh '''
-                        echo "Building application..."
-                        java -version
-                        mvn -version
+                        echo "=========================================="
+                        echo " BUILD AND TEST"
+                        echo "=========================================="
 
                         mvn clean package
                     '''
@@ -65,17 +58,23 @@ pipeline {
             }
         }
 
-        stage('Static Code Analysis') {
+        stage('SonarQube Analysis') {
             steps {
+
                 withCredentials([
                     string(
                         credentialsId: 'sonarqube',
                         variable: 'SONAR_AUTH_TOKEN'
                     )
                 ]) {
+
                     dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+
                         sh '''
-                            echo "Running SonarQube analysis..."
+                            echo "=========================================="
+                            echo " SONARQUBE ANALYSIS"
+                            echo "=========================================="
+
                             java -version
                             mvn -version
 
@@ -90,9 +89,14 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
+
                 dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+
                     sh '''
-                        echo "Building Docker image..."
+                        echo "=========================================="
+                        echo " BUILD DOCKER IMAGE"
+                        echo "=========================================="
+
                         docker --version
 
                         docker build \
@@ -105,48 +109,42 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
+
                 script {
-                    def dockerImage = docker.image("${DOCKER_IMAGE}")
+
+                    echo "=========================================="
+                    echo " PUSH TO DOCKER HUB"
+                    echo "=========================================="
 
                     docker.withRegistry(
                         'https://index.docker.io/v1/',
                         'docker-cred'
                     ) {
-                        dockerImage.push()
+
+                        docker.image("${DOCKER_IMAGE}").push()
                     }
                 }
             }
         }
 
-        stage('Update Deployment File') {
+        stage('Update Kubernetes Manifest') {
             steps {
+
                 withCredentials([
                     string(
                         credentialsId: 'github-cred',
                         variable: 'GITHUB_TOKEN'
                     )
                 ]) {
+
                     sh '''
-                        set -e
+                        echo "=========================================="
+                        echo " UPDATE KUBERNETES MANIFEST"
+                        echo "=========================================="
 
-                        echo "Updating Kubernetes deployment image..."
+                        chmod +x deploy.sh
 
-                        git config user.email "devopsuser60@gmail.com"
-                        git config user.name "devopsuser60"
-
-                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-                          java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                        git add \
-                          java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-
-                        git commit \
-                          -m "Update deployment image to version ${BUILD_NUMBER}" \
-                          || echo "No changes to commit"
-
-                        git push \
-                          https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git \
-                          HEAD:main
+                        ./deploy.sh "$BUILD_NUMBER"
                     '''
                 }
             }
@@ -154,6 +152,7 @@ pipeline {
     }
 
     post {
+
         success {
             echo '=========================================='
             echo ' PIPELINE COMPLETED SUCCESSFULLY'
