@@ -1,27 +1,49 @@
 pipeline {
+
     agent any
 
     environment {
-        APP_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app'
-        MANIFEST_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests'
-        IMAGE_NAME = 'spring-boot-web'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        SONAR_URL = 'http://192.168.73.146:9000'
+
+        DOCKER_IMAGE = 'suyashawate/ultimate-cicd'
+
+        GIT_USER_NAME = 'devopsuser60'
+        GIT_REPO_NAME = 'Jenkins-Zero-To-Hero'
     }
 
     stages {
 
         stage('Checkout') {
             steps {
+                echo '=========================================='
+                echo ' CHECKOUT'
+                echo '=========================================='
+
                 checkout scm
+
+                sh '''
+                    echo "Workspace:"
+                    pwd
+                    echo "Files:"
+                    ls -la
+                '''
             }
         }
 
         stage('Build and Test') {
             steps {
-                dir("${APP_DIR}") {
+                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
                     sh '''
                         set -e
-                        mvn clean package -DskipTests
+
+                        echo '=========================================='
+                        echo ' BUILD AND TEST'
+                        echo '=========================================='
+
+                        java -version
+                        mvn -version
+
+                        mvn clean package
                     '''
                 }
             }
@@ -29,11 +51,23 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                dir("${APP_DIR}") {
-                    withSonarQubeEnv('sonarqube') {
+                withCredentials([
+                    string(
+                        credentialsId: 'sonarqube',
+                        variable: 'SONAR_AUTH_TOKEN'
+                    )
+                ]) {
+                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
                         sh '''
                             set -e
-                            mvn sonar:sonar
+
+                            echo '=========================================='
+                            echo ' SONARQUBE ANALYSIS'
+                            echo '=========================================='
+
+                            mvn sonar:sonar \
+                              -Dsonar.login="$SONAR_AUTH_TOKEN" \
+                              -Dsonar.host.url="$SONAR_URL"
                         '''
                     }
                 }
@@ -42,29 +76,79 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                dir("${APP_DIR}") {
+                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
                     sh '''
                         set -e
-                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+
+                        echo '=========================================='
+                        echo ' BUILD DOCKER IMAGE'
+                        echo '=========================================='
+
+                        docker --version
+
+                        docker build \
+                          -t ${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                          -t ${DOCKER_IMAGE}:latest \
+                          .
                     '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    echo '=========================================='
+                    echo ' PUSH DOCKER IMAGE'
+                    echo '=========================================='
+
+                    def dockerImage =
+                        docker.image("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+
+                    docker.withRegistry(
+                        'https://index.docker.io/v1/',
+                        'docker-cred'
+                    ) {
+                        dockerImage.push()
+                        docker.image("${DOCKER_IMAGE}:latest").push()
+                    }
                 }
             }
         }
 
         stage('Update Kubernetes Manifest') {
             steps {
-                dir("${MANIFEST_DIR}") {
+                withCredentials([
+                    string(
+                        credentialsId: 'github-cred',
+                        variable: 'GITHUB_TOKEN'
+                    )
+                ]) {
                     sh '''
                         set -e
 
-                        if [ ! -f deployment.yaml ]; then
-                            echo "ERROR: deployment.yaml not found"
-                            exit 1
-                        fi
+                        echo '=========================================='
+                        echo ' UPDATE KUBERNETES MANIFEST'
+                        echo '=========================================='
 
-                        sed -i "s|image:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|g" deployment.yaml
+                        MANIFEST="java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml"
 
-                        cat deployment.yaml
+                        echo "Updating image tag to ${BUILD_NUMBER}"
+
+                        sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" "$MANIFEST"
+
+                        git config user.email "devopsuser60@gmail.com"
+                        git config user.name "devopsuser60"
+
+                        git add "$MANIFEST"
+
+                        git commit \
+                          -m "Update deployment image to version ${BUILD_NUMBER}" \
+                          || echo "No manifest changes to commit"
+
+                        git push \
+                          "https://${GIT_USER_NAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git" \
+                          HEAD:main
                     '''
                 }
             }
@@ -75,14 +159,12 @@ pipeline {
                 sh '''
                     set -e
 
-                    kubectl apply -f ${MANIFEST_DIR}/deployment.yaml
-                    kubectl apply -f ${MANIFEST_DIR}/service.yaml
+                    echo '=========================================='
+                    echo ' ARGO CD DEPLOYMENT'
+                    echo '=========================================='
 
-                    kubectl rollout status deployment/spring-boot-web --timeout=180s
-
-                    kubectl get pods
-                    kubectl get svc
-                    kubectl get deployment
+                    echo "Manifest pushed to GitHub."
+                    echo "Argo CD will detect the Git change and synchronize Kubernetes."
                 '''
             }
         }
@@ -90,11 +172,15 @@ pipeline {
 
     post {
         success {
-            echo 'PIPELINE COMPLETED SUCCESSFULLY'
+            echo '=========================================='
+            echo ' PIPELINE COMPLETED SUCCESSFULLY'
+            echo '=========================================='
         }
 
         failure {
-            echo 'PIPELINE FAILED'
+            echo '=========================================='
+            echo ' PIPELINE FAILED'
+            echo '=========================================='
         }
     }
 }
