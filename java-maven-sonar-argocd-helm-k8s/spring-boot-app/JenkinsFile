@@ -1,4 +1,5 @@
 pipeline {
+
     agent {
         docker {
             image 'abhishekf5/maven-abhishek-docker-agent:v1'
@@ -6,18 +7,45 @@ pipeline {
         }
     }
 
+    environment {
+        SONAR_URL = 'http://192.168.73.146:9000'
+
+        DOCKER_IMAGE = "suyashawate/ultimate-cicd:${BUILD_NUMBER}"
+
+        GIT_REPO_NAME = 'Jenkins-Zero-To-Hero'
+        GIT_USER_NAME = 'devopsuser60'
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/iam-veeramalla/Jenkins-Zero-To-Hero.git'
+                echo 'Checking source code...'
+                sh 'pwd'
+                sh 'ls -ltr'
+            }
+        }
 
+        stage('Configure Java 17') {
+            steps {
                 sh '''
-                    echo "Java version:"
-                    java -version
+                    echo "Java before configuration:"
+                    java -version || true
 
-                    echo "Maven version:"
+                    echo "JAVA_HOME=$JAVA_HOME"
+
+                    if [ -d "/usr/lib/jvm/java-17-openjdk" ]; then
+                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+                    elif [ -d "/usr/lib/jvm/java-17-openjdk-17" ]; then
+                        export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-17
+                    elif [ -d "/usr/lib/jvm/java-17" ]; then
+                        export JAVA_HOME=/usr/lib/jvm/java-17
+                    fi
+
+                    export PATH="$JAVA_HOME/bin:$PATH"
+
+                    echo "JAVA_HOME=$JAVA_HOME"
+                    java -version
                     mvn -version
                 '''
             }
@@ -25,18 +53,19 @@ pipeline {
 
         stage('Build and Test') {
             steps {
-                sh '''
-                    cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                    mvn clean package
-                '''
+                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                    sh '''
+                        echo "Building application..."
+                        java -version
+                        mvn -version
+
+                        mvn clean package
+                    '''
+                }
             }
         }
 
         stage('Static Code Analysis') {
-            environment {
-                SONAR_URL = 'http://192.168.73.146:9000'
-            }
-
             steps {
                 withCredentials([
                     string(
@@ -44,29 +73,39 @@ pipeline {
                         variable: 'SONAR_AUTH_TOKEN'
                     )
                 ]) {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
+                    dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                        sh '''
+                            echo "Running SonarQube analysis..."
+                            java -version
+                            mvn -version
 
-                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
-                          -Dsonar.token="$SONAR_AUTH_TOKEN" \
-                          -Dsonar.host.url="$SONAR_URL"
+                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
+                              -Dsonar.token="$SONAR_AUTH_TOKEN" \
+                              -Dsonar.host.url="$SONAR_URL"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') {
+                    sh '''
+                        echo "Building Docker image..."
+                        docker --version
+
+                        docker build \
+                            -t "$DOCKER_IMAGE" \
+                            .
                     '''
                 }
             }
         }
 
-        stage('Build and Push Docker Image') {
-            environment {
-                DOCKER_IMAGE = "suyashawate/ultimate-cicd:${BUILD_NUMBER}"
-            }
-
+        stage('Push Docker Image') {
             steps {
                 script {
-                    sh '''
-                        cd java-maven-sonar-argocd-helm-k8s/spring-boot-app
-                        docker build -t ${DOCKER_IMAGE} .
-                    '''
-
                     def dockerImage = docker.image("${DOCKER_IMAGE}")
 
                     docker.withRegistry(
@@ -80,11 +119,6 @@ pipeline {
         }
 
         stage('Update Deployment File') {
-            environment {
-                GIT_REPO_NAME = 'Jenkins-Zero-To-Hero'
-                GIT_USER_NAME = 'devopsuser60'
-            }
-
             steps {
                 withCredentials([
                     string(
@@ -93,20 +127,47 @@ pipeline {
                     )
                 ]) {
                     sh '''
+                        set -e
+
+                        echo "Updating Kubernetes deployment image..."
+
                         git config user.email "devopsuser60@gmail.com"
                         git config user.name "devopsuser60"
 
                         sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" \
-                        java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                          java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                        git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                        git add \
+                          java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
 
-                        git commit -m "Update deployment image to version ${BUILD_NUMBER}" || true
+                        git commit \
+                          -m "Update deployment image to version ${BUILD_NUMBER}" \
+                          || echo "No changes to commit"
 
-                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
+                        git push \
+                          https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git \
+                          HEAD:main
                     '''
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo '=========================================='
+            echo ' PIPELINE COMPLETED SUCCESSFULLY'
+            echo " Docker Image: ${DOCKER_IMAGE}"
+            echo " Build Number: ${BUILD_NUMBER}"
+            echo '=========================================='
+        }
+
+        failure {
+            echo '=========================================='
+            echo ' PIPELINE FAILED'
+            echo " Build Number: ${BUILD_NUMBER}"
+            echo ' Check the failed stage logs.'
+            echo '=========================================='
         }
     }
 }
