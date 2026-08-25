@@ -171,7 +171,7 @@ pipeline {
                         git add "${MANIFEST}"
 
                         git commit \
-                          -m "Update deployment image to version ${BUILD_NUMBER}" \
+                          -m "Update deployment image to version ${BUILD_NUMBER} [skip ci]" \
                           || echo "No manifest changes to commit"
 
                         echo
