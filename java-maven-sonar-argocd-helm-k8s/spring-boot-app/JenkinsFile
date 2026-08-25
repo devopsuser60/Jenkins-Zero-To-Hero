@@ -9,9 +9,9 @@ pipeline {
 
         GIT_USER_NAME = 'devopsuser60'
         GIT_REPO_NAME = 'Jenkins-Zero-To-Hero'
+        MANIFEST_REPO_NAME = 'spring-boot-app-manifests'
 
         APP_DIR = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app'
-        MANIFEST = 'java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml'
     }
 
     stages {
@@ -20,7 +20,7 @@ pipeline {
             steps {
                 echo '=========================================='
                 echo ' CHECKOUT'
-                echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>======================<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+                echo '=========================================='
 
                 checkout scm
 
@@ -113,13 +113,15 @@ pipeline {
                         'https://index.docker.io/v1/',
                         'docker-cred'
                     ) {
-                        docker.image(
-                            "${DOCKER_IMAGE}:${BUILD_NUMBER}"
-                        ).push()
+                        retry(3) {
+                            docker.image(
+                                "${DOCKER_IMAGE}:${BUILD_NUMBER}"
+                            ).push()
 
-                        docker.image(
-                            "${DOCKER_IMAGE}:latest"
-                        ).push()
+                            docker.image(
+                                "${DOCKER_IMAGE}:latest"
+                            ).push()
+                        }
                     }
                 }
             }
@@ -137,49 +139,49 @@ pipeline {
                         set -e
 
                         echo '=========================================='
-                        echo ' UPDATE KUBERNETES MANIFEST'
+                        echo ' UPDATE KUBERNETES MANIFEST REPO'
                         echo '=========================================='
 
-                        echo "Manifest:"
-                        echo "${MANIFEST}"
+                        # 1. Clean workspace directory & clone remote manifest repo
+                        rm -rf manifest-repo
+                        git clone "https://${GIT_USER_NAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${MANIFEST_REPO_NAME}.git" manifest-repo
+
+                        cd manifest-repo
+
+                        echo "Current image in deployment.yaml:"
+                        grep 'image:' deployment.yaml || true
 
                         echo
-                        echo "Current image:"
-                        grep 'image:' "${MANIFEST}"
+                        echo "Updating image tag to BUILD_NUMBER=${BUILD_NUMBER}..."
 
-                        echo
-                        echo "Updating image tag to BUILD_NUMBER=${BUILD_NUMBER}"
-
+                        # 2. Update image tag using regex replacement
                         sed -i -E \
-                          "s|(image:[[:space:]]*${DOCKER_IMAGE}:).*|\\1${BUILD_NUMBER}|" \
-                          "${MANIFEST}"
+                          "s|(${DOCKER_IMAGE}:)[^[:space:]\\"]*|\\1${BUILD_NUMBER}|g" \
+                          deployment.yaml
 
                         echo
-                        echo "New image:"
-                        grep 'image:' "${MANIFEST}"
+                        echo "New image in deployment.yaml:"
+                        grep 'image:' deployment.yaml
 
                         echo
                         echo "Verifying image tag..."
-
-                        grep -q "${DOCKER_IMAGE}:${BUILD_NUMBER}" "${MANIFEST}"
-
+                        grep -q "${DOCKER_IMAGE}:${BUILD_NUMBER}" deployment.yaml
                         echo "Image tag verification successful."
 
+                        # 3. Configure Git credentials & commit changes
                         git config user.email "devopsuser60@gmail.com"
                         git config user.name "devopsuser60"
 
-                        git add "${MANIFEST}"
+                        git add deployment.yaml
 
                         git commit \
-                          -m "Update deployment image to version ${BUILD_NUMBER} [skip ci]" \
+                          -m "Update deployment image to version ${BUILD_NUMBER}" \
                           || echo "No manifest changes to commit"
 
                         echo
-                        echo "Pushing manifest to GitHub..."
+                        echo "Pushing manifest update to ${MANIFEST_REPO_NAME}..."
 
-                        git push \
-                          "https://${GIT_USER_NAME}:${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git" \
-                          HEAD:main
+                        git push origin main
                     '''
                 }
             }
@@ -191,7 +193,7 @@ pipeline {
                 echo ' ARGO CD'
                 echo '=========================================='
 
-                echo 'Git manifest updated successfully.'
+                echo 'Git manifest updated successfully in spring-boot-app-manifests.'
                 echo 'Argo CD will detect the Git change and deploy to Kubernetes.'
             }
         }
