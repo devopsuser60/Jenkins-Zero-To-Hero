@@ -2,24 +2,139 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Using Bootstrap for layout but custom CSS for styling -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"/>
-    <link data-th-href="@{/css/main.css?{id}(id=${timestamp})}" rel="stylesheet">
-    <title>CI/CD Master Class By Abhishek Veeramalla</title>
+    <title>Netflix - GitOps CI/CD Master Class</title>
+    <style>
+        /* Base styling: Black background and Netflix font color */
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            /* Extra padding to prevent content hiding behind fixed navbar */
+            padding-top: 100px;
+        }
+
+        /* Fixed transparent-to-black navbar */
+        .navbar-netflix {
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 10%, rgba(0,0,0,0));
+            padding: 1rem 4%;
+            transition: background-color 0.5s;
+        }
+
+        /* Red Netflix-style logo text */
+        .navbar-brand-netflix {
+            color: #E50914 !important;
+            font-size: 2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Large centered text area mimicking the landing experience */
+        .starter-template-netflix {
+            text-align: center;
+            margin-top: 5rem;
+            padding: 0 5%;
+        }
+
+        /* Big, bold headline */
+        .starter-template-netflix h1 {
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            line-height: 1.1;
+        }
+
+        /* Leading paragraph text */
+        .starter-template-netflix p.lead-netflix {
+            font-size: 1.6rem;
+            font-weight: 400;
+            margin-bottom: 2rem;
+        }
+
+        /* Red Call-to-Action button */
+        .btn-netflix-red {
+            background-color: #E50914;
+            color: #fff;
+            font-size: 1.5rem;
+            padding: 12px 30px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-weight: 500;
+            border: none;
+            box-shadow: 0 1px 0 rgba(0,0,0,0.45);
+        }
+
+        .btn-netflix-red:hover {
+            background-color: #f6121d;
+            color: #fff;
+            text-decoration: none;
+        }
+
+        /* Subtitle gray text */
+        .text-gray {
+            color: #999;
+            font-size: 1.1rem;
+            margin-top: 3rem;
+        }
+
+        /* Status Badge */
+        .badge-netflix {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #aaa;
+            border: 1px solid #333;
+            font-weight: normal;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+
+        /* Gradient overlay for background effect */
+        .con-gradient {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background-image: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.8) 100%);
+          z-index: -1;
+        }
+
+    </style>
 </head>
 <body>
 
-<nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
-    <a class="navbar-brand" href="#">Ultimate CI/CD Pipeline using Java</div></a>
+<!-- Background gradient effect -->
+<div class="con-gradient"></div>
+
+<!-- Header Navigation Bar (Netflix Look) -->
+<nav class="navbar navbar-expand-md navbar-dark navbar-netflix fixed-top">
+    <div class="container-fluid">
+        <a class="navbar-brand-netflix" href="#">GitOps</a>
+        <div class="ml-auto">
+            <a href="#" class="btn btn-netflix-red btn-sm" style="font-size: 0.9rem; padding: 7px 17px;">Sign In</a>
+        </div>
+    </div>
 </nav>
 
+<!-- Main Application Content (Centered Large Hero) -->
 <main role="main" class="container">
-    <div class="starter-template">
-        <h1 th:text="${title}">Default title.</h1>
-        <p th:text="${msg}">Default text.</p>
+    <div class="starter-template starter-template-netflix jumbotron bg-transparent">
+        <h1 class="display-3" th:text="${title}">Unlimited CI/CD Pipelines.</h1>
+        <p class="lead lead-netflix" th:text="${msg}">Watch your deployments happen anywhere. Cancel your manual steps anytime.</p>
+        
+        <p class="text-gray mt-5">Ready to deploy? Press the big red button to simulate a release.</p>
+        
+        <div class="mt-4">
+            <button class="btn btn-netflix-red">Deploy Now <span class="ml-2"> &gt;</span></button>
+        </div>
+
+        <div class="mt-5">
+            <span class="badge badge-pill badge-netflix p-2">GitOps Managed Deployment</span>
+            <span class="badge badge-pill badge-netflix p-2 ml-2">ArgoCD Synced</span>
+        </div>
     </div>
 </main>
 
-<script data-th-src="@{/js/main.js}"></script>
 </body>
-
 </html>
